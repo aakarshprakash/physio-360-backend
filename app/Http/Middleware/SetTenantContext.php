@@ -24,26 +24,35 @@ class SetTenantContext
 
     public function handle(Request $request, Closure $next, string $guard = 'web'): Response
     {
-        $identity = Auth::guard($guard)->user();
+        // Staff arrive via the session (web) or a mobile bearer token (sanctum).
+        $identity = Auth::guard($guard)->user() ?? ($guard === 'web' ? Auth::guard('sanctum')->user() : null);
 
         if (! $identity instanceof User && ! $identity instanceof Patient) {
             abort(401);
         }
 
+        $signOut = function () use ($guard, $identity) {
+            if (Auth::guard($guard)->check()) {
+                Auth::guard($guard)->logout();
+            } elseif ($identity instanceof User) {
+                $identity->currentAccessToken()?->delete();
+            }
+        };
+
         $tenant = Tenant::query()->find($identity->tenant_id);
 
         if (! $tenant || ! $tenant->isActive()) {
-            Auth::guard($guard)->logout();
+            $signOut();
             abort(response()->json(['message' => 'This clinic account is suspended. Please contact support.', 'code' => 'tenant_suspended'], 403));
         }
 
         if ($identity instanceof User && ! $identity->is_active) {
-            Auth::guard($guard)->logout();
+            $signOut();
             abort(response()->json(['message' => 'Your account has been deactivated.', 'code' => 'account_inactive'], 403));
         }
 
         if ($identity instanceof Patient && ! $identity->portal_enabled) {
-            Auth::guard($guard)->logout();
+            $signOut();
             abort(response()->json(['message' => 'Portal access is disabled for this account.', 'code' => 'portal_disabled'], 403));
         }
 

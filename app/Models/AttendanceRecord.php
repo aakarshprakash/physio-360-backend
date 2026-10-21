@@ -26,6 +26,12 @@ class AttendanceRecord extends Model
             'status' => AttendanceStatus::class,
             'minutes_worked' => 'integer',
             'is_late' => 'boolean',
+            'check_in_lat' => 'float',
+            'check_in_lng' => 'float',
+            'check_out_lat' => 'float',
+            'check_out_lng' => 'float',
+            'check_in_distance_m' => 'integer',
+            'check_out_distance_m' => 'integer',
         ];
     }
 

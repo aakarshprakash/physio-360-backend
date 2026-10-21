@@ -20,6 +20,7 @@ arch('every tenant-owned model is tenant-scoped')
         'App\Models\Tenant',         // the tenant itself
         'App\Models\PlatformAdmin',  // SYSNAC operators
         'App\Models\AuditLog',       // tenant_id nullable; readers filter explicitly
+        'App\Models\PersonalAccessToken', // owned by a user; the owner defines the tenant
     ]);
 
 arch('controllers do not read env() directly')
@@ -39,6 +40,7 @@ it('confines raw query-builder access to reviewed places', function () {
         'app/Reports/',                                   // explicit tenant_id filters
         'app/Http/Controllers/Api/Platform/',             // cross-tenant by design, counts only
         'app/Services/Scheduling/BookingService.php',     // SET TRANSACTION ISOLATION LEVEL
+        'app/Auth/SessionRevoker.php',                    // sessions keyed by globally unique user id
     ];
 
     $offenders = [];

@@ -120,8 +120,8 @@ class DemoSeeder extends Seeder
             $tenant->update(['legal_name' => 'Physio360 Demo Clinic Pvt Ltd', 'tax_number' => '32ABCDE1234F1Z5', 'address' => 'MG Road, Ernakulam, Kochi, Kerala 682016']);
 
             $kochi = Branch::query()->where('code', 'KOC')->first();
-            $kochi->update(['address' => 'MG Road, Ernakulam', 'phone' => '+91 484 400 3600']);
-            $tvm = Branch::query()->create(['name' => 'Trivandrum', 'code' => 'TVM', 'city' => 'Thiruvananthapuram', 'phone' => '+91 471 400 3600']);
+            $kochi->update(['address' => 'MG Road, Ernakulam', 'phone' => '+91 484 400 3600', 'latitude' => 9.9658, 'longitude' => 76.2875, 'geofence_radius_m' => 150]);
+            $tvm = Branch::query()->create(['name' => 'Trivandrum', 'code' => 'TVM', 'city' => 'Thiruvananthapuram', 'phone' => '+91 471 400 3600', 'latitude' => 8.5241, 'longitude' => 76.9366, 'geofence_radius_m' => 150]);
             Room::query()->create(['branch_id' => $tvm->id, 'name' => 'Treatment Room A']);
             Room::query()->create(['branch_id' => $tvm->id, 'name' => 'Treatment Room B']);
 
@@ -133,6 +133,7 @@ class DemoSeeder extends Seeder
             $this->staff('Reena Thomas', 'reena@physio360.test', Role::Receptionist, [$kochi, $tvm], false, '#E0A030');
             $this->staff('Joseph Varghese', 'joseph@physio360.test', Role::Accountant, [$kochi, $tvm], false, '#2B9AA8');
             $this->staff('Kiran Das', 'kiran@physio360.test', Role::Admin, [$kochi, $tvm], false, '#D9534F');
+            self::applyEmployeeRecords();
 
             foreach ([[$arjun, $kochi], [$fatima, $kochi], [$fatima, $tvm]] as [$user, $branch]) {
                 if ($user === $fatima && $branch === $tvm) {
@@ -216,6 +217,28 @@ class DemoSeeder extends Seeder
             $this->invoices->post($invoice, $omar->id);
             $this->invoices->recordPayment($invoice->refresh(), 20_000, PaymentMethod::Card, ['received_by' => $omar->id]);
         });
+    }
+
+    /** HR record details for the demo team. Only blank fields are filled, so it is safe to re-run. */
+    public static function applyEmployeeRecords(): void
+    {
+        $records = [
+            'sarah@physio360.test' => ['employee_code' => 'P360-001', 'employment_type' => 'full_time', 'joined_on' => '2019-06-01', 'gender' => 'female', 'date_of_birth' => '1984-03-12', 'qualification' => 'MPT (Orthopaedics), BPT', 'registration_number' => 'KSAHPC-PT-1042', 'address' => 'Panampilly Nagar, Kochi', 'emergency_contact_name' => 'Thomas Mathew', 'emergency_contact_phone' => '+91 98470 20001'],
+            'arjun@physio360.test' => ['employee_code' => 'P360-002', 'employment_type' => 'full_time', 'joined_on' => '2021-02-15', 'gender' => 'male', 'date_of_birth' => '1990-11-04', 'qualification' => 'MPT (Neurology), BPT', 'registration_number' => 'KSAHPC-PT-2210', 'address' => 'Kakkanad, Kochi', 'emergency_contact_name' => 'Lakshmi Menon', 'emergency_contact_phone' => '+91 98470 20002'],
+            'fatima@physio360.test' => ['employee_code' => 'P360-003', 'employment_type' => 'full_time', 'joined_on' => '2022-07-01', 'gender' => 'female', 'date_of_birth' => '1992-05-21', 'qualification' => 'MPT (Women\'s Health), BPT', 'registration_number' => 'KSAHPC-PT-2675', 'address' => 'Edappally, Kochi', 'emergency_contact_name' => 'Imran Khan', 'emergency_contact_phone' => '+91 98470 20003', 'geofence_exempt' => true, 'hr_notes' => 'Covers home visits on Thursdays (geofence exempt).'],
+            'reena@physio360.test' => ['employee_code' => 'P360-004', 'employment_type' => 'full_time', 'joined_on' => '2020-09-10', 'gender' => 'female', 'date_of_birth' => '1995-08-30', 'qualification' => 'B.Com', 'address' => 'Vyttila, Kochi', 'emergency_contact_name' => 'Joseph Thomas', 'emergency_contact_phone' => '+91 98470 20004'],
+            'joseph@physio360.test' => ['employee_code' => 'P360-005', 'employment_type' => 'part_time', 'joined_on' => '2021-04-01', 'gender' => 'male', 'date_of_birth' => '1987-01-17', 'qualification' => 'M.Com, CMA (Inter)', 'address' => 'Aluva, Kochi', 'emergency_contact_name' => 'Mary Varghese', 'emergency_contact_phone' => '+91 98470 20005'],
+            'kiran@physio360.test' => ['employee_code' => 'P360-006', 'employment_type' => 'full_time', 'joined_on' => '2023-01-02', 'gender' => 'male', 'date_of_birth' => '1991-12-09', 'qualification' => 'MBA (Hospital Administration)', 'address' => 'Thrippunithura, Kochi', 'emergency_contact_name' => 'Anitha Das', 'emergency_contact_phone' => '+91 98470 20006'],
+        ];
+
+        foreach (User::query()->whereIn('email', array_keys($records))->get() as $user) {
+            foreach ($records[$user->email] as $field => $value) {
+                if ($user->getAttribute($field) === null || ($field === 'geofence_exempt' && ! $user->geofence_exempt)) {
+                    $user->setAttribute($field, $value);
+                }
+            }
+            $user->save();
+        }
     }
 
     private function staff(string $name, string $email, Role $role, array $branches, bool $practitioner, string $color, ?string $specialization = null): User
@@ -543,6 +566,11 @@ class DemoSeeder extends Seeder
                 ['date' => "{$year}-12-25", 'name' => 'Christmas'],
             ],
             'attendance_grace_minutes' => 10,
+            'online_booking' => ['enabled' => true, 'mode' => 'request', 'min_lead_minutes' => 120, 'max_days_ahead' => 30, 'allow_practitioner_choice' => true,
+                'intro' => 'Book a physiotherapy session at Kochi or Trivandrum. We will confirm your appointment by phone or WhatsApp.'],
+            'invoice' => ['terms' => "Payment is due on the date of the session unless agreed otherwise.
+Package sessions are valid for the period stated and are non-transferable.",
+                'footer_note' => 'Thank you for choosing Physio360 Demo Clinic. Wishing you a speedy recovery!', 'signatory' => 'Dr. Sarah Mathew'],
             'payment_reminders' => ['enabled' => true, 'channel' => 'email', 'days_after_due' => [1, 7, 14], 'include_payment_link' => false],
         ])]);
         $calendar = app(WorkCalendar::class);

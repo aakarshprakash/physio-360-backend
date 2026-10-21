@@ -46,6 +46,7 @@ class PatientResource extends Resource
             ] : null),
             'status' => $this->status,
             'portal_enabled' => $this->portal_enabled,
+            'photo_url' => $this->photo_path ? '/api/patients/'.$this->id.'/photo?v='.substr(hash('xxh3', $this->photo_path), 0, 8) : null,
             'created_at' => $this->iso($this->created_at),
         ];
     }

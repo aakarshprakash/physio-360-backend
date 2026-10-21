@@ -23,6 +23,7 @@ class AttendanceService
         private readonly TenantContext $context,
         private readonly WorkCalendar $calendar,
         private readonly LeaveCalendar $leave,
+        private readonly Geofence $geofence,
     ) {}
 
     public function timezone(): string
@@ -40,9 +41,14 @@ class AttendanceService
         return AttendanceRecord::query()->where('user_id', $user->id)->whereDate('work_date', $this->today()->toDateString())->first();
     }
 
-    public function checkIn(User $user, ?int $branchId = null): AttendanceRecord
+    /**
+     * @param  array{latitude: float, longitude: float, accuracy?: ?float}|null  $location
+     */
+    public function checkIn(User $user, ?int $branchId = null, ?array $location = null, ?string $device = null): AttendanceRecord
     {
-        return DB::transaction(function () use ($user, $branchId) {
+        $site = $this->geofence->check($user, $location);
+
+        return DB::transaction(function () use ($user, $branchId, $location, $device, $site) {
             $now = CarbonImmutable::now($this->timezone());
             $record = AttendanceRecord::query()->where('user_id', $user->id)->whereDate('work_date', $now->toDateString())->lockForUpdate()->first();
 
@@ -52,20 +58,29 @@ class AttendanceService
 
             $record ??= new AttendanceRecord(['user_id' => $user->id, 'work_date' => $now->toDateString()]);
             $record->fill([
-                'branch_id' => $branchId,
+                'branch_id' => $branchId ?? $site['branch']?->id,
                 'check_in_at' => $now->utc(),
+                'check_in_lat' => $location['latitude'] ?? null,
+                'check_in_lng' => $location['longitude'] ?? null,
+                'check_in_distance_m' => $site['distance'],
                 'status' => AttendanceStatus::Present,
                 'is_late' => $this->isLate($user->id, $now),
                 'source' => 'self',
+                'device' => $device,
             ])->save();
 
             return $record;
         });
     }
 
-    public function checkOut(User $user): AttendanceRecord
+    /**
+     * @param  array{latitude: float, longitude: float, accuracy?: ?float}|null  $location
+     */
+    public function checkOut(User $user, ?array $location = null): AttendanceRecord
     {
-        return DB::transaction(function () use ($user) {
+        $site = $this->geofence->check($user, $location);
+
+        return DB::transaction(function () use ($user, $location, $site) {
             $now = CarbonImmutable::now($this->timezone());
             $record = AttendanceRecord::query()->where('user_id', $user->id)->whereDate('work_date', $now->toDateString())->lockForUpdate()->first();
 
@@ -78,6 +93,9 @@ class AttendanceService
 
             $record->fill([
                 'check_out_at' => $now->utc(),
+                'check_out_lat' => $location['latitude'] ?? null,
+                'check_out_lng' => $location['longitude'] ?? null,
+                'check_out_distance_m' => $site['distance'],
                 'minutes_worked' => (int) round($record->check_in_at->diffInMinutes($now)),
             ])->save();
 
@@ -202,6 +220,8 @@ class AttendanceService
                     'minutes' => $r?->minutes_worked,
                     'is_late' => (bool) $r?->is_late,
                     'notes' => $r?->notes,
+                    'check_in_distance_m' => $r?->check_in_distance_m,
+                    'device' => $r?->device,
                     'leave' => $l,
                 ];
             }

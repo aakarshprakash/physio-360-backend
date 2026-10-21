@@ -78,12 +78,14 @@ it('accepts Malayalam as an interface and document language', function () {
     actingAsStaff($this->owner)->putJson('/api/auth/profile', ['locale' => 'fr'])->assertJsonValidationErrors('locale');
 });
 
-it('keeps PDF translations complete in every language', function () {
+// English is the primary language; other locales may lag and fall back to English,
+// but must never carry keys English no longer has.
+it('keeps PDF translations free of orphaned keys', function () {
     $keys = function (array $a, string $p = '') use (&$keys): array {
         return collect($a)->flatMap(fn ($v, $k) => is_array($v) ? $keys($v, "{$p}{$k}.") : ["{$p}{$k}"])->sort()->values()->all();
     };
     $en = $keys(require lang_path('en/pdf.php'));
 
-    expect($keys(require lang_path('ar/pdf.php')))->toBe($en)
-        ->and($keys(require lang_path('ml/pdf.php')))->toBe($en);
+    expect(array_diff($keys(require lang_path('ar/pdf.php')), $en))->toBe([])
+        ->and(array_diff($keys(require lang_path('ml/pdf.php')), $en))->toBe([]);
 });

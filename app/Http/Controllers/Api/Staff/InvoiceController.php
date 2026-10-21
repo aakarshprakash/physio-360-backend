@@ -19,6 +19,7 @@ use App\Services\Billing\InvoiceService;
 use App\Services\Billing\PackageService;
 use App\Services\Payments\RazorpayGateway;
 use App\Services\Pdf\PdfRenderer;
+use App\Support\AmountInWords;
 use App\Support\Money;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -215,11 +216,30 @@ class InvoiceController extends Controller
 
     public static function renderPdf(Invoice $invoice, PdfRenderer $pdf, string $locale): Response
     {
-        $invoice->load(['patient', 'items', 'payments', 'tenant', 'insurancePolicy.payer']);
+        $invoice->load(['patient', 'items.service', 'items.appointment.practitioner', 'payments', 'tenant', 'insurancePolicy.payer']);
         $tenant = $invoice->tenant;
         $branch = Branch::query()->find($invoice->branch_id);
         $locale = PdfRenderer::locale($locale);
         $numberLocale = $locale === 'ar' ? 'ar' : ($tenant->country_code === 'IN' ? 'en_IN' : 'en');
+        $timezone = $branch?->effectiveTimezone() ?? $tenant->timezone;
+        $appointments = $invoice->items->pluck('appointment')->filter();
+
+        // India: intra-state GST is shown as equal CGST + SGST halves.
+        $taxLines = [];
+        if ($invoice->tax_minor > 0) {
+            if ($tenant->country_code === 'IN') {
+                $half = intdiv($invoice->tax_minor, 2);
+                $taxLines = [['CGST', $half], ['SGST', $invoice->tax_minor - $half]];
+            } else {
+                $taxLines = [[__('pdf.tax', [], $locale), $invoice->tax_minor]];
+            }
+        }
+
+        $balance = max(0, $invoice->balance_minor);
+        $upiId = $tenant->setting('invoice.upi_id');
+        $upi = $upiId && $invoice->currency_code === 'INR' && $balance > 0 && $invoice->status->value === 'posted'
+            ? 'upi://pay?'.http_build_query(['pa' => $upiId, 'pn' => $tenant->name, 'am' => Money::toMajorString($balance, 'INR'), 'cu' => 'INR', 'tn' => 'Invoice '.$invoice->number], '', '&', PHP_QUERY_RFC3986)
+            : null;
 
         $content = $pdf->render('pdf.invoice', [
             'title' => 'Invoice '.($invoice->number ?? 'draft'),
@@ -227,8 +247,22 @@ class InvoiceController extends Controller
             'tenant' => $tenant,
             'branch' => $branch,
             'locale' => $locale,
-            'timezone' => $branch?->effectiveTimezone() ?? $tenant->timezone,
+            'timezone' => $timezone,
             'money' => fn (int $minor) => Money::format($minor, $invoice->currency_code, $numberLocale),
+            'words' => AmountInWords::format($invoice->total_minor, $invoice->currency_code),
+            'practitioners' => $appointments->pluck('practitioner.name')->filter()->unique()->values(),
+            'visitDates' => $appointments->sortBy('starts_at')->map(fn ($a) => $a->starts_at->timezone($timezone)->format('d M'))->unique()->values(),
+            'taxLines' => $taxLines,
+            'upi' => $upi,
+            'bank' => $tenant->setting('invoice.bank_details'),
+            'terms' => $tenant->setting('invoice.terms'),
+            'watermark' => match (true) {
+                $invoice->status->value === 'void' => 'VOID',
+                $invoice->status->value === 'draft' => 'DRAFT',
+                $invoice->payment_status === 'paid' => 'PAID',
+                default => null,
+            },
+            'footer' => $tenant->name.' · '.($invoice->number ?? 'Draft').'||{PAGENO} / {nbpg}',
             'generatedAt' => now($tenant->timezone)->format('d M Y H:i'),
         ], $locale);
 

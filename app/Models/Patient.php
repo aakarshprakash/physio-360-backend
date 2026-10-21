@@ -24,7 +24,7 @@ class Patient extends Authenticatable
     /** Mirrors column defaults so fresh models are complete under strict mode. */
     protected $attributes = ['status' => 'active', 'preferred_language' => 'en', 'portal_enabled' => false];
 
-    protected $guarded = ['id', 'tenant_id', 'mrn', 'phone_index', 'email_index', 'portal_password',
+    protected $guarded = ['id', 'tenant_id', 'mrn', 'phone_index', 'email_index', 'photo_path', 'portal_password',
         'portal_invite_token_hash', 'remember_token'];
 
     protected $hidden = ['portal_password', 'remember_token', 'portal_invite_token_hash', 'phone_index', 'email_index'];

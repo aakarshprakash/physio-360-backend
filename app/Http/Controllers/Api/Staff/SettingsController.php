@@ -21,7 +21,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Mpdf\QrCode\Output\Svg;
+use Mpdf\QrCode\QrCode;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Clinic configuration. Reads are open to all staff (forms need the catalog);
@@ -63,6 +68,21 @@ class SettingsController extends Controller
             'settings.holidays.*.date' => ['required', 'date_format:Y-m-d'],
             'settings.holidays.*.name' => ['required', 'string', 'max:96'],
             'settings.attendance_grace_minutes' => ['sometimes', 'integer', 'between:0,120'],
+            'settings.attendance_geofence' => ['sometimes', 'boolean'],
+            'settings.online_booking' => ['sometimes', 'array'],
+            'settings.online_booking.enabled' => ['sometimes', 'boolean'],
+            'settings.online_booking.mode' => ['sometimes', 'in:request,instant'],
+            'settings.online_booking.min_lead_minutes' => ['sometimes', 'integer', 'between:0,10080'],
+            'settings.online_booking.max_days_ahead' => ['sometimes', 'integer', 'between:1,180'],
+            'settings.online_booking.allow_practitioner_choice' => ['sometimes', 'boolean'],
+            'settings.online_booking.intro' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'settings.invoice' => ['sometimes', 'array'],
+            'settings.invoice.terms' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'settings.invoice.footer_note' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'settings.invoice.bank_details' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'settings.invoice.upi_id' => ['sometimes', 'nullable', 'string', 'max:64', 'regex:/^[\w.\-]{2,64}@[A-Za-z]{2,64}$/'],
+            'settings.invoice.signatory' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'settings.invoice.accent_color' => ['sometimes', 'nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'settings.payment_reminders' => ['sometimes', 'array'],
             'settings.payment_reminders.enabled' => ['sometimes', 'boolean'],
             'settings.payment_reminders.channel' => ['sometimes', 'in:email,sms,whatsapp'],
@@ -129,6 +149,51 @@ class SettingsController extends Controller
         return new BranchResource($branch);
     }
 
+    /**
+     * QR code (SVG) for the clinic's booking link, for posters, reception
+     * desks and social media. Only links to this clinic's booking page.
+     */
+    public function bookingQr(Request $request): Response
+    {
+        $data = $request->validate(['url' => ['required', 'url', 'max:500']]);
+        $slug = Tenant::query()->whereKey($request->user()->tenant_id)->value('slug');
+        abort_unless(str_contains(parse_url($data['url'], PHP_URL_PATH) ?? '', '/book/'.$slug), 422, 'Not this clinic\'s booking link.');
+
+        $svg = (new Svg)->output(new QrCode($data['url'], 'M'), 320, 'white', '#142D36');
+
+        return response($svg, 200, ['Content-Type' => 'image/svg+xml', 'Cache-Control' => 'private, max-age=86400']);
+    }
+
+    /** Letterhead logo used on invoices, receipts and the public booking page. */
+    public function uploadLogo(Request $request): TenantResource
+    {
+        Gate::authorize('settings.manage');
+        $data = $request->validate(['logo' => ['required', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048', 'dimensions:min_width=64,min_height=64,max_width=4000,max_height=4000']]);
+        $tenant = Tenant::query()->findOrFail($request->user()->tenant_id);
+        $disk = Storage::disk(config('filesystems.private_disk'));
+
+        $old = $tenant->logo_path;
+        $path = $data['logo']->storeAs('tenants/'.$tenant->id.'/branding', 'logo-'.Str::random(8).'.'.$data['logo']->extension(), config('filesystems.private_disk'));
+        $tenant->forceFill(['logo_path' => $path])->save();
+        if ($old) {
+            $disk->delete($old);
+        }
+
+        return new TenantResource($tenant->load('currency'));
+    }
+
+    public function deleteLogo(Request $request): TenantResource
+    {
+        Gate::authorize('settings.manage');
+        $tenant = Tenant::query()->findOrFail($request->user()->tenant_id);
+        if ($tenant->logo_path) {
+            Storage::disk(config('filesystems.private_disk'))->delete($tenant->logo_path);
+            $tenant->forceFill(['logo_path' => null])->save();
+        }
+
+        return new TenantResource($tenant->load('currency'));
+    }
+
     private function branchData(Request $request, ?Branch $branch = null): array
     {
         $required = $branch ? 'sometimes' : 'required';
@@ -142,6 +207,9 @@ class SettingsController extends Controller
             'city' => ['nullable', 'string', 'max:96'],
             'timezone' => ['nullable', 'timezone:all'],
             'is_active' => ['sometimes', 'boolean'],
+            'latitude' => ['nullable', 'numeric', 'between:-90,90', 'required_with:longitude'],
+            'longitude' => ['nullable', 'numeric', 'between:-180,180', 'required_with:latitude'],
+            'geofence_radius_m' => ['sometimes', 'integer', 'between:25,5000'],
         ]);
 
         if (isset($data['code'])) {
@@ -224,6 +292,8 @@ class SettingsController extends Controller
             'tax_rate_bp' => ['sometimes', 'integer', 'between:0,10000'],
             'color' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'is_active' => ['sometimes', 'boolean'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'online_bookable' => ['sometimes', 'boolean'],
         ]);
     }
 

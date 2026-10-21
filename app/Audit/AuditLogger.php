@@ -48,7 +48,8 @@ class AuditLogger
     /** @return array{0: string, 1: Model|null} */
     private function actor(): array
     {
-        foreach (['web' => 'user', 'patient' => 'patient', 'platform' => 'platform'] as $guard => $type) {
+        // "sanctum" covers staff on the mobile app (bearer token).
+        foreach (['web' => 'user', 'sanctum' => 'user', 'patient' => 'patient', 'platform' => 'platform'] as $guard => $type) {
             $user = Auth::guard($guard)->user();
             if ($user instanceof User || $user instanceof Patient || $user instanceof PlatformAdmin) {
                 return [$type, $user];

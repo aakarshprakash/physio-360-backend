@@ -13,7 +13,11 @@ use App\Models\User;
 use App\Tenancy\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Tenancy\TenantScope;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
@@ -64,9 +68,52 @@ class AuthController extends Controller
         });
     }
 
-    /** Sign out and invalidate the session. */
+    /**
+     * Mobile app sign-in: returns a bearer token (send as "Authorization: Bearer …").
+     *
+     * @unauthenticated
+     */
+    public function token(Request $request): JsonResponse
+    {
+        $credentials = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string'],
+            'device_name' => ['required', 'string', 'max:96'],
+        ]);
+
+        /** @var User|null $user */
+        $user = User::query()->withoutGlobalScope(TenantScope::class)->where('email', strtolower($credentials['email']))->first();
+
+        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
+            throw ValidationException::withMessages(['email' => __('auth.failed')]);
+        }
+
+        $tenant = Tenant::query()->find($user->tenant_id);
+        if (! $user->is_active || ! $tenant?->isActive()) {
+            throw ValidationException::withMessages(['email' => 'This account is not active. Please contact your clinic administrator.']);
+        }
+
+        $user->forceFill(['last_login_at' => now()])->saveQuietly();
+
+        return $this->tenants->run($tenant, function () use ($user, $credentials) {
+            $token = $user->createToken(Str::limit($credentials['device_name'], 90, ''));
+            $this->audit->record('login', $user, [], ['channel' => 'mobile', 'device' => $credentials['device_name']]);
+
+            return response()->json(['token' => $token->plainTextToken, 'data' => $this->mePayload($user)]);
+        });
+    }
+
+    /** Sign out: revokes the mobile token, or ends the web session. */
     public function logout(Request $request): JsonResponse
     {
+        $token = $request->user()?->currentAccessToken();
+
+        if ($token instanceof PersonalAccessToken) {
+            $token->delete();
+
+            return response()->json(['message' => 'Signed out.']);
+        }
+
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
@@ -96,14 +143,19 @@ class AuthController extends Controller
     public function changePassword(Request $request): JsonResponse
     {
         $request->validate([
-            'current_password' => ['required', 'current_password:web'],
-            'password' => ['required', 'confirmed', PasswordRule::defaults()],
+            'current_password' => ['required', 'current_password:sanctum'],
+            'password' => ['required', 'confirmed', 'different:current_password', PasswordRule::defaults()],
         ]);
 
         $user = $request->user();
-        $user->password = $request->input('password');
-        $user->save();
-        Auth::guard('web')->logoutOtherDevices($request->input('password'));
+        $current = $user->currentAccessToken();
+        $user->setNewPassword($request->input('password'));
+
+        // Sign out every other session and device.
+        $user->tokens()->when($current instanceof PersonalAccessToken, fn ($q) => $q->whereKeyNot($current->getKey()))->delete();
+        if (Auth::guard('web')->check()) {
+            Auth::guard('web')->logoutOtherDevices($request->input('password'));
+        }
 
         return response()->json(['message' => 'Password updated.']);
     }
@@ -130,9 +182,8 @@ class AuthController extends Controller
         $status = Password::broker('users')->reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
-                $user->password = $password;
-                $user->setRememberToken(null);
-                $user->saveQuietly();
+                $user->setNewPassword($password);
+                $user->tokens()->delete();
             }
         );
 
@@ -156,6 +207,7 @@ class AuthController extends Controller
                 Branch::query()->where('is_active', true)->when($branchIds !== null, fn ($q) => $q->whereIn('id', $branchIds))->orderBy('name')->get()
             ),
             'permissions' => $user->getAllPermissions()->pluck('name')->values(),
+            'must_change_password' => (bool) $user->must_change_password,
         ];
     }
 }

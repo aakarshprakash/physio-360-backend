@@ -11,7 +11,7 @@ class Service extends Model
     use Auditable, BelongsToTenant;
 
     /** Mirrors column defaults so fresh models are complete under strict mode. */
-    protected $attributes = ['is_active' => true, 'tax_rate_bp' => 0, 'duration_minutes' => 45, 'price_minor' => 0];
+    protected $attributes = ['is_active' => true, 'online_bookable' => true, 'tax_rate_bp' => 0, 'duration_minutes' => 45, 'price_minor' => 0];
 
     protected $guarded = ['id', 'tenant_id'];
 
@@ -19,6 +19,7 @@ class Service extends Model
     {
         return [
             'is_active' => 'boolean',
+            'online_bookable' => 'boolean',
             'price_minor' => 'integer',
             'tax_rate_bp' => 'integer',
             'duration_minutes' => 'integer',

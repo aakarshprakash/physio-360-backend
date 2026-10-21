@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Patient\PortalAuthController;
 use App\Http\Controllers\Api\Patient\PortalController;
 use App\Http\Controllers\Api\Platform\PlatformController;
 use App\Http\Controllers\Api\Platform\PlatformSupportController;
+use App\Http\Controllers\Api\PublicBookingController;
 use App\Http\Controllers\Api\PublicEnquiryController;
 use App\Http\Controllers\Api\Staff\AppointmentController;
 use App\Http\Controllers\Api\Staff\AttendanceController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Api\Staff\InsurancePolicyController;
 use App\Http\Controllers\Api\Staff\InvoiceController;
 use App\Http\Controllers\Api\Staff\LeaveController;
 use App\Http\Controllers\Api\Staff\MessageController;
+use App\Http\Controllers\Api\Staff\OnlineBookingController;
 use App\Http\Controllers\Api\Staff\PackageController;
 use App\Http\Controllers\Api\Staff\PatientController;
 use App\Http\Controllers\Api\Staff\PatientTimelineController;
@@ -39,6 +41,7 @@ use Illuminate\Support\Facades\Route;
 */
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
+    Route::post('token', [AuthController::class, 'token'])->middleware('throttle:login'); // mobile app
     Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:login');
     Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:login');
 });
@@ -64,6 +67,9 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api'])->group(function ()
     Route::get('patients/{patient}/treatment-plans', [TreatmentPlanController::class, 'forPatient']);
     Route::post('patients/{patient}/treatment-plans', [TreatmentPlanController::class, 'store']);
     Route::get('patients/{patient}/documents', [DocumentController::class, 'index']);
+    Route::get('patients/{patient}/photo', [DocumentController::class, 'photo']);
+    Route::post('patients/{patient}/photo', [DocumentController::class, 'uploadPhoto']);
+    Route::delete('patients/{patient}/photo', [DocumentController::class, 'deletePhoto']);
     Route::post('patients/{patient}/documents', [DocumentController::class, 'store']);
     Route::get('patients/{patient}/consents', [DocumentController::class, 'consents']);
     Route::post('patients/{patient}/consents', [DocumentController::class, 'signConsent']);
@@ -115,6 +121,12 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api'])->group(function ()
     Route::post('appointments/{appointment}/invoice', [AppointmentController::class, 'invoice']);
     Route::get('availability', [AppointmentController::class, 'availability']);
     Route::get('calendar/resources', [AppointmentController::class, 'resources']);
+
+    // Online booking inbox (public booking page / website / WhatsApp)
+    Route::get('online-bookings', [OnlineBookingController::class, 'index']);
+    Route::get('online-bookings/{booking}/matches', [OnlineBookingController::class, 'matches']);
+    Route::post('online-bookings/{booking}/confirm', [OnlineBookingController::class, 'confirm']);
+    Route::post('online-bookings/{booking}/decline', [OnlineBookingController::class, 'decline']);
 
     // Billing
     Route::get('invoices', [InvoiceController::class, 'index']);
@@ -203,13 +215,21 @@ Route::middleware(['auth:sanctum', 'tenant', 'throttle:api'])->group(function ()
     // Team & settings
     Route::get('staff', [StaffController::class, 'index']);
     Route::post('staff', [StaffController::class, 'store']);
+    Route::get('staff/summary', [StaffController::class, 'summary']);
+    Route::get('staff/roles', [StaffController::class, 'roles']);
+    Route::get('staff/{user}', [StaffController::class, 'show'])->whereNumber('user');
     Route::put('staff/{user}', [StaffController::class, 'update']);
+    Route::post('staff/{user}/password', [StaffController::class, 'resetPassword']);
+    Route::post('staff/{user}/sign-out', [StaffController::class, 'revokeSessions']);
     Route::get('staff/{user}/working-hours', [StaffController::class, 'workingHours']);
     Route::put('staff/{user}/working-hours', [StaffController::class, 'updateWorkingHours']);
 
     Route::prefix('settings')->group(function () {
         Route::get('clinic', [SettingsController::class, 'clinic']);
         Route::put('clinic', [SettingsController::class, 'updateClinic']);
+        Route::post('clinic/logo', [SettingsController::class, 'uploadLogo']);
+        Route::get('booking-qr', [SettingsController::class, 'bookingQr']);
+        Route::delete('clinic/logo', [SettingsController::class, 'deleteLogo']);
         Route::get('branches', [SettingsController::class, 'branches']);
         Route::post('branches', [SettingsController::class, 'storeBranch']);
         Route::put('branches/{branch}', [SettingsController::class, 'updateBranch']);
@@ -290,5 +310,13 @@ Route::prefix('platform')->group(function () {
 
 // Website "request a callback" form for each clinic.
 Route::post('public/clinics/{slug}/enquiries', [PublicEnquiryController::class, 'store'])->middleware('throttle:public-enquiry');
+
+// Public booking page (shareable link, website embed, WhatsApp) and clinic logo.
+Route::prefix('public/clinics/{slug}')->group(function () {
+    Route::get('booking', [PublicBookingController::class, 'show'])->middleware('throttle:public-booking-read');
+    Route::get('booking/slots', [PublicBookingController::class, 'slots'])->middleware('throttle:public-booking-read');
+    Route::post('booking', [PublicBookingController::class, 'store'])->middleware('throttle:public-booking');
+    Route::get('logo', [PublicBookingController::class, 'logo'])->middleware('throttle:public-booking-read');
+});
 
 Route::post('webhooks/razorpay/{slug}', [WebhookController::class, 'razorpay'])->middleware('throttle:webhooks');

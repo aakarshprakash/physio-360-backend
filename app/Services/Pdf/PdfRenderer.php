@@ -2,6 +2,8 @@
 
 namespace App\Services\Pdf;
 
+use App\Models\Tenant;
+use Illuminate\Support\Facades\Storage;
 use Mpdf\Config\ConfigVariables;
 use Mpdf\Config\FontVariables;
 use Mpdf\Language\LanguageToFont;
@@ -67,10 +69,33 @@ class PdfRenderer
         $mpdf->SetDirectionality($rtl ? 'rtl' : 'ltr');
         $mpdf->SetTitle($data['title'] ?? 'Physio360');
         $mpdf->SetCreator('Physio360 by SYSNAC');
-        $mpdf->SetFooter('{PAGENO} / {nbpg}');
-        $mpdf->WriteHTML(view($view, $data + ['rtl' => $rtl, 'locale' => $locale])->render());
+        $mpdf->defaultfooterfontstyle = '';
+        $mpdf->defaultfooterfontsize = 7.5;
+        $mpdf->defaultfooterline = 0;
+        $mpdf->SetFooter($data['footer'] ?? '{PAGENO} / {nbpg}');
+        if (! empty($data['watermark'])) {
+            $mpdf->SetWatermarkText($data['watermark'], 0.07);
+            $mpdf->showWatermarkText = true;
+            $mpdf->watermark_font = 'dejavusanscondensed';
+        }
+        $logo = isset($data['tenant']) && $data['tenant'] instanceof Tenant ? self::logoDataUri($data['tenant']) : null;
+        $mpdf->WriteHTML(view($view, $data + ['rtl' => $rtl, 'locale' => $locale, 'logo' => $logo])->render());
 
         return $mpdf->Output('', Destination::STRING_RETURN);
+    }
+
+    /** The clinic logo as a data URI (works with any storage disk), or null. */
+    public static function logoDataUri(Tenant $tenant): ?string
+    {
+        if (! $tenant->logo_path) {
+            return null;
+        }
+        $disk = Storage::disk(config('filesystems.private_disk'));
+        if (! $disk->exists($tenant->logo_path)) {
+            return null;
+        }
+
+        return 'data:'.($disk->mimeType($tenant->logo_path) ?: 'image/png').';base64,'.base64_encode($disk->get($tenant->logo_path));
     }
 
     /** Normalise a requested PDF language to one we have templates for. */

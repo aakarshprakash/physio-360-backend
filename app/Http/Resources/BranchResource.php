@@ -20,6 +20,9 @@ class BranchResource extends Resource
             'city' => $this->city,
             'timezone' => $this->timezone,
             'is_active' => $this->is_active,
+            'latitude' => $this->latitude,
+            'longitude' => $this->longitude,
+            'geofence_radius_m' => $this->geofence_radius_m,
         ];
     }
 }

@@ -84,6 +84,42 @@ class DocumentController extends Controller
         ]);
     }
 
+    /** Profile photo (identification at the front desk and in the mobile app). */
+    public function photo(Patient $patient): StreamedResponse
+    {
+        Gate::authorize('view', $patient);
+        abort_unless($patient->photo_path && Storage::disk(config('filesystems.private_disk'))->exists($patient->photo_path), 404);
+
+        return Storage::disk(config('filesystems.private_disk'))->response($patient->photo_path, null, ['Cache-Control' => 'private, max-age=3600']);
+    }
+
+    public function uploadPhoto(Request $request, Patient $patient): JsonResponse
+    {
+        Gate::authorize('update', $patient);
+        $data = $request->validate(['photo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192']]);
+
+        $disk = Storage::disk(config('filesystems.private_disk'));
+        $old = $patient->photo_path;
+        $path = $data['photo']->storeAs('tenants/'.$patient->tenant_id.'/patients/'.$patient->id, 'photo-'.Str::uuid().'.'.$data['photo']->extension(), config('filesystems.private_disk'));
+        $patient->forceFill(['photo_path' => $path])->save();
+        if ($old) {
+            $disk->delete($old);
+        }
+
+        return response()->json(['data' => ['photo_url' => '/api/patients/'.$patient->id.'/photo?v='.substr(hash('xxh3', $path), 0, 8)]]);
+    }
+
+    public function deletePhoto(Patient $patient): JsonResponse
+    {
+        Gate::authorize('update', $patient);
+        if ($patient->photo_path) {
+            Storage::disk(config('filesystems.private_disk'))->delete($patient->photo_path);
+            $patient->forceFill(['photo_path' => null])->save();
+        }
+
+        return response()->json(null, 204);
+    }
+
     public function destroy(Document $document): JsonResponse
     {
         Gate::authorize('update', $document->patient);

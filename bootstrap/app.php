@@ -24,6 +24,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Cookie-based SPA auth (Sanctum) for requests from SANCTUM_STATEFUL_DOMAINS.
         $middleware->statefulApi();
+        // Public booking/enquiry forms are embedded on clinic websites (cross-site iframes
+        // cannot rely on our cookies). They are rate-limited, honeypotted and session-less.
+        $middleware->validateCsrfTokens(except: ['api/public/*']);
         $middleware->trustProxies(at: '*');
         $middleware->append(SecurityHeaders::class);
         $middleware->api(append: [EnforceAbsoluteSessionTimeout::class]);

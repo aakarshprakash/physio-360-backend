@@ -27,6 +27,7 @@ class TenantResource extends Resource
             'locale' => $this->locale,
             'status' => $this->status->value,
             'plan' => $this->plan,
+            'logo_url' => $this->logo_path ? url('/api/public/clinics/'.$this->slug.'/logo').'?v='.substr(hash('xxh3', $this->logo_path), 0, 8) : null,
             'currency' => [
                 'code' => $this->currency->code,
                 'symbol' => $this->currency->symbol,
@@ -41,6 +42,23 @@ class TenantResource extends Resource
                 /** @var list<array{date: string, name: string}> */
                 'holidays' => array_values((array) $this->setting('holidays', [])),
                 'attendance_grace_minutes' => (int) $this->setting('attendance_grace_minutes', 10),
+                'attendance_geofence' => (bool) $this->setting('attendance_geofence', false),
+                'online_booking' => [
+                    'enabled' => (bool) $this->setting('online_booking.enabled', true),
+                    'mode' => (string) $this->setting('online_booking.mode', 'request'),
+                    'min_lead_minutes' => (int) $this->setting('online_booking.min_lead_minutes', 120),
+                    'max_days_ahead' => (int) $this->setting('online_booking.max_days_ahead', 30),
+                    'allow_practitioner_choice' => (bool) $this->setting('online_booking.allow_practitioner_choice', true),
+                    'intro' => $this->setting('online_booking.intro'),
+                ],
+                'invoice' => [
+                    'terms' => $this->setting('invoice.terms'),
+                    'footer_note' => $this->setting('invoice.footer_note'),
+                    'bank_details' => $this->setting('invoice.bank_details'),
+                    'upi_id' => $this->setting('invoice.upi_id'),
+                    'signatory' => $this->setting('invoice.signatory'),
+                    'accent_color' => $this->setting('invoice.accent_color'),
+                ],
                 'payment_reminders' => [
                     'enabled' => (bool) $this->setting('payment_reminders.enabled', false),
                     'channel' => (string) $this->setting('payment_reminders.channel', 'email'),

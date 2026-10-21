@@ -15,13 +15,13 @@ class Branch extends Model
     use Auditable, BelongsToTenant, HasFactory;
 
     /** Mirrors column defaults so fresh models are complete under strict mode. */
-    protected $attributes = ['is_active' => true];
+    protected $attributes = ['is_active' => true, 'geofence_radius_m' => 150];
 
     protected $guarded = ['id', 'tenant_id'];
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean'];
+        return ['is_active' => 'boolean', 'latitude' => 'float', 'longitude' => 'float', 'geofence_radius_m' => 'integer'];
     }
 
     protected static function booted(): void

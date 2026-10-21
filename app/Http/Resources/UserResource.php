@@ -24,6 +24,7 @@ class UserResource extends Resource
             'roles' => $this->whenLoaded('roles', fn () => $this->roles->pluck('name')->values()),
             'branch_ids' => $this->whenLoaded('branches', fn () => $this->branches->pluck('id')->values()),
             'last_login_at' => $this->iso($this->last_login_at),
+            'must_change_password' => $this->when($request->user()?->is($this->resource) ?? false, fn () => $this->must_change_password),
         ];
     }
 }

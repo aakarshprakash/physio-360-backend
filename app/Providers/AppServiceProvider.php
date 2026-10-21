@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\PersonalAccessToken;
 use App\Models\PlatformAdmin;
+use Laravel\Sanctum\Sanctum;
 use App\Support\Database\BlueprintMacros;
 use App\Tenancy\TenantContext;
 use App\Tenancy\TenantlessEloquentUserProvider;
@@ -33,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
         Model::shouldBeStrict(! $this->app->isProduction());
 
         Auth::provider('tenantless-eloquent', fn ($app, array $config) => new TenantlessEloquentUserProvider($app['hash'], $config['model']));
+        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
 
         Password::defaults(fn () => $this->app->isProduction()
             ? Password::min(10)->letters()->mixedCase()->numbers()->uncompromised()
@@ -58,6 +61,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('portal-booking', fn (Request $request) => Limit::perHour(20)->by('patient:'.Auth::guard('patient')->id()));
 
         RateLimiter::for('public-enquiry', fn (Request $request) => [Limit::perMinute(3)->by($request->ip()), Limit::perDay(30)->by($request->ip())]);
+
+        // Public booking page: generous reads (slot browsing), tight writes.
+        RateLimiter::for('public-booking-read', fn (Request $request) => Limit::perMinute(90)->by($request->ip()));
+        RateLimiter::for('public-booking', fn (Request $request) => [Limit::perMinute(4)->by($request->ip()), Limit::perDay(25)->by($request->ip())]);
 
         RateLimiter::for('webhooks', fn (Request $request) => Limit::perMinute(120)->by($request->ip()));
 

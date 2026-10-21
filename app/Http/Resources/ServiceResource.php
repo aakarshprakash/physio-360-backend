@@ -20,6 +20,8 @@ class ServiceResource extends Resource
             'tax_rate_bp' => $this->tax_rate_bp,
             'color' => $this->color,
             'is_active' => $this->is_active,
+            'description' => $this->description,
+            'online_bookable' => $this->online_bookable,
         ];
     }
 }
