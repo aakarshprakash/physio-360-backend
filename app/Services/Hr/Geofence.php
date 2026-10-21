@@ -74,7 +74,7 @@ class Geofence
 
         if ($required && ! $inside) {
             throw new DomainRuleViolation(
-                "You are about {$this->human($distance)} from {$nearest->name}. Clock-in is allowed within {$nearest->geofence_radius_m} m of the clinic.",
+                "You are about {$this->human($distance)} from {$nearest->name}. You can clock in or out within {$nearest->geofence_radius_m} m of the clinic.",
                 'outside_geofence',
                 ['distance_m' => $distance, 'radius_m' => $nearest->geofence_radius_m, 'branch' => $nearest->name],
             );
